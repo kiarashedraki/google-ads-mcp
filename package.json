@@ -1,0 +1,50 @@
+{
+  "name": "google-ads-api-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for the Google Ads API — GAQL reporting, campaign/ad group/keyword management, budgets and negatives from any MCP client",
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "google-ads",
+    "google-ads-api",
+    "gaql",
+    "ppc",
+    "sem",
+    "advertising"
+  ],
+  "license": "MIT",
+  "author": "Kiarash (Kevin) Edraki",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kiarashedraki/google-ads-mcp.git"
+  },
+  "homepage": "https://github.com/kiarashedraki/google-ads-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/kiarashedraki/google-ads-mcp/issues"
+  },
+  "type": "module",
+  "bin": {
+    "google-ads-api-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsc && chmod +x dist/index.js",
+    "dev": "tsc --watch",
+    "start": "node dist/index.js",
+    "smoke": "node scripts/smoke.mjs",
+    "prepublishOnly": "npm run build"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^3.24.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "typescript": "^5.6.0"
+  }
+}
