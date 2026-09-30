@@ -1,6 +1,6 @@
 {
   "name": "google-ads-api-mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "MCP server for the Google Ads API — GAQL reporting, campaign/ad group/keyword management, budgets and negatives from any MCP client",
   "keywords": [
     "mcp",

@@ -79,12 +79,24 @@ Then configure your MCP client:
 | Variable | Required | Description |
 |---|---|---|
 | `GOOGLE_ADS_DEVELOPER_TOKEN` | yes | From API Center in a manager account |
-| `GOOGLE_ADS_OAUTH_CLIENT_ID` | yes | OAuth 2.0 client ID |
-| `GOOGLE_ADS_OAUTH_CLIENT_SECRET` | yes | OAuth 2.0 client secret |
-| `GOOGLE_ADS_REFRESH_TOKEN` | yes | Refresh token with the `adwords` scope |
+| `GOOGLE_ADS_OAUTH_CLIENT_ID` | stdio only | OAuth 2.0 client ID |
+| `GOOGLE_ADS_OAUTH_CLIENT_SECRET` | stdio only | OAuth 2.0 client secret |
+| `GOOGLE_ADS_REFRESH_TOKEN` | stdio only | Refresh token with the `adwords` scope |
 | `GOOGLE_ADS_LOGIN_CUSTOMER_ID` | no | Manager (MCC) account to authenticate through; needed when the account is accessed via a manager |
 | `GOOGLE_ADS_CUSTOMER_ID` | no | Default client account when a tool call omits `customer_id` |
 | `GOOGLE_ADS_API_VERSION` | no | Default `v24`. Bump when Google releases a new version; versions sunset roughly yearly |
+| `MCP_TRANSPORT` | no | `stdio` (default) or `http`. `--http` on the command line does the same |
+| `PORT` / `HOST` / `MCP_PATH` | no | HTTP mode listen settings. Defaults `8000` / `0.0.0.0` / `/mcp` |
+
+### HTTP mode (behind an auth proxy such as Nango)
+
+With `MCP_TRANSPORT=http` the server speaks stateless Streamable HTTP and holds no user credentials. Every request must carry `Authorization: Bearer <Google access token>` with the `https://www.googleapis.com/auth/adwords` scope, and that token is used for that request only. The proxy keeps the Google login and refreshes it. Only the account-level settings stay in env: `GOOGLE_ADS_DEVELOPER_TOKEN`, and optionally `GOOGLE_ADS_LOGIN_CUSTOMER_ID` / `GOOGLE_ADS_CUSTOMER_ID`.
+
+```bash
+MCP_TRANSPORT=http PORT=8000 GOOGLE_ADS_DEVELOPER_TOKEN=... GOOGLE_ADS_LOGIN_CUSTOMER_ID=... node dist/index.js
+```
+
+`GET /health` returns `{"ok":true}`. Only `POST /mcp` is served (GET and DELETE return 405), and a request without a bearer token gets 401. Keep it on a private network behind the proxy.
 
 ### Docker
 
@@ -93,7 +105,11 @@ docker build -t google-ads-api-mcp .
 docker run -e GOOGLE_ADS_DEVELOPER_TOKEN=... -e GOOGLE_ADS_OAUTH_CLIENT_ID=... -e GOOGLE_ADS_OAUTH_CLIENT_SECRET=... -e GOOGLE_ADS_REFRESH_TOKEN=... google-ads-api-mcp
 ```
 
-The container speaks MCP over stdio; use your platform's stdio wrapper (e.g. obot's runtime) to expose it over HTTP.
+The container speaks MCP over stdio by default. For HTTP mode:
+
+```bash
+docker run -p 8000:8000 -e MCP_TRANSPORT=http -e GOOGLE_ADS_DEVELOPER_TOKEN=... -e GOOGLE_ADS_LOGIN_CUSTOMER_ID=... google-ads-api-mcp
+```
 
 ## GAQL cheatsheet
 

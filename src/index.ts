@@ -1,20 +1,26 @@
 #!/usr/bin/env node
+import http from "node:http";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { z } from "zod";
-import { config, resolveCustomerId } from "./config.js";
+import { config, resolveCustomerId, transportMode } from "./config.js";
 import {
   GoogleAdsError,
   convertMicros,
   gaqlString,
   listAccessibleCustomers,
   mutate,
+  requestToken,
   search,
   searchFields,
   toMicros,
 } from "./googleads.js";
 
-const VERSION = "0.1.0";
+const VERSION = "0.2.0";
+
+/** Build a server with every tool registered. stdio uses one; http builds one per request (stateless). */
+function createServer(): McpServer {
 const server = new McpServer({ name: "google-ads-api-mcp", version: VERSION });
 
 type ToolResult = {
@@ -981,10 +987,80 @@ server.registerTool(
   }
 );
 
+return server;
+}
+
+// ---------------------------------------------------------------------------
+// Transports.
 // ---------------------------------------------------------------------------
 
-const transport = new StdioServerTransport();
-await server.connect(transport);
-console.error(
-  `google-ads-api-mcp ${VERSION} connected (api ${config.apiVersion}, login ${config.loginCustomerId ?? "-"}, default customer ${config.defaultCustomerId ?? "-"})`
-);
+const describe = `api ${config.apiVersion}, login ${config.loginCustomerId ?? "-"}, default customer ${config.defaultCustomerId ?? "-"}`;
+
+if (transportMode === "stdio") {
+  const transport = new StdioServerTransport();
+  await createServer().connect(transport);
+  console.error(`google-ads-api-mcp ${VERSION} connected over stdio (${describe})`);
+} else {
+  // Stateless Streamable HTTP. Every request must carry `Authorization: Bearer <Google access token>`
+  // with the adwords scope; it is used for that request only (an auth proxy such as Nango refreshes it).
+  const PORT = Number(process.env.PORT || 8000);
+  const HOST = process.env.HOST || "0.0.0.0";
+  const MCP_PATH = process.env.MCP_PATH || "/mcp";
+  const MAX_BODY_BYTES = 1_000_000;
+
+  const send = (res: http.ServerResponse, status: number, body: unknown, headers: Record<string, string> = {}) => {
+    res.writeHead(status, { "Content-Type": "application/json", ...headers });
+    res.end(JSON.stringify(body));
+  };
+  const readJson = async (req: http.IncomingMessage): Promise<unknown> => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    for await (const chunk of req) {
+      size += (chunk as Buffer).length;
+      if (size > MAX_BODY_BYTES) throw new Error("request body too large");
+      chunks.push(chunk as Buffer);
+    }
+    const raw = Buffer.concat(chunks).toString("utf8");
+    return raw ? JSON.parse(raw) : undefined;
+  };
+
+  const httpServer = http.createServer(async (req, res) => {
+    const path = (req.url || "/").split("?")[0];
+    if (path === "/health" || path === "/healthz") return send(res, 200, { ok: true, version: VERSION });
+    if (path !== MCP_PATH) return send(res, 404, { error: "not found" });
+    if (req.method !== "POST") return send(res, 405, { error: "method not allowed" }, { Allow: "POST" });
+
+    const m = /^Bearer\s+(.+)$/i.exec((req.headers.authorization || "").trim());
+    if (!m) {
+      return send(res, 401, { error: "missing Authorization: Bearer <Google access token>" }, { "WWW-Authenticate": "Bearer" });
+    }
+    const token = m[1].trim();
+
+    let body: unknown;
+    try {
+      body = await readJson(req);
+    } catch (e) {
+      return send(res, 400, { jsonrpc: "2.0", error: { code: -32700, message: `Parse error: ${(e as Error).message}` }, id: null });
+    }
+
+    const server = createServer();
+    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
+    res.on("close", () => {
+      void transport.close();
+      void server.close();
+    });
+    try {
+      await server.connect(transport);
+      await requestToken.run(token, () => transport.handleRequest(req, res, body));
+    } catch (e) {
+      if (!res.headersSent) send(res, 500, { jsonrpc: "2.0", error: { code: -32603, message: (e as Error).message }, id: null });
+    }
+  });
+
+  httpServer.listen(PORT, HOST, () => {
+    console.error(`google-ads-api-mcp ${VERSION} listening on http://${HOST}:${PORT}${MCP_PATH} (${describe})`);
+  });
+  for (const sig of ["SIGINT", "SIGTERM"] as const) {
+    process.on(sig, () => httpServer.close(() => process.exit(0)));
+  }
+}

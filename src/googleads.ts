@@ -1,4 +1,11 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { config } from "./config.js";
+
+/**
+ * Per-request Google access token (http mode). When set, it is used as-is and the
+ * refresh-token flow is skipped, so an auth proxy (e.g. Nango) owns login + refresh.
+ */
+export const requestToken = new AsyncLocalStorage<string>();
 
 const BASE = "https://googleads.googleapis.com";
 
@@ -22,6 +29,11 @@ export class GoogleAdsError extends Error {
 let cached: { token: string; expiresAt: number } | null = null;
 
 export async function accessToken(): Promise<string> {
+  const perRequest = requestToken.getStore();
+  if (perRequest) return perRequest;
+  if (!config.refreshToken) {
+    throw new GoogleAdsError("No access token: send Authorization: Bearer <Google access token> (http mode) or set GOOGLE_ADS_REFRESH_TOKEN (stdio mode).", 401);
+  }
   if (cached && Date.now() < cached.expiresAt) return cached.token;
   const res = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",

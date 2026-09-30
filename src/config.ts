@@ -3,6 +3,13 @@ export function normalizeCustomerId(id: string): string {
   return id.replace(/[^0-9]/g, "");
 }
 
+/**
+ * Transport: "stdio" (default) or "http". In http mode the Google access token arrives per request
+ * (Authorization: Bearer), so the OAuth client/refresh-token variables are not needed.
+ */
+export const transportMode: "stdio" | "http" =
+  (process.env.MCP_TRANSPORT ?? "").toLowerCase() === "http" || process.argv.includes("--http") ? "http" : "stdio";
+
 function required(name: string, hint: string): string {
   const v = process.env[name];
   if (!v) {
@@ -12,6 +19,11 @@ function required(name: string, hint: string): string {
   return v;
 }
 
+/** Required in stdio mode only; in http mode the caller supplies the access token. */
+function requiredForStdio(name: string, hint: string): string {
+  return transportMode === "http" ? process.env[name] ?? "" : required(name, hint);
+}
+
 function optionalCustomerId(name: string): string | undefined {
   const v = process.env[name];
   return v ? normalizeCustomerId(v) : undefined;
@@ -19,9 +31,9 @@ function optionalCustomerId(name: string): string | undefined {
 
 export const config = {
   developerToken: required("GOOGLE_ADS_DEVELOPER_TOKEN", "from API Center in a manager account"),
-  clientId: required("GOOGLE_ADS_OAUTH_CLIENT_ID", "OAuth 2.0 client ID from Google Cloud"),
-  clientSecret: required("GOOGLE_ADS_OAUTH_CLIENT_SECRET", "OAuth 2.0 client secret"),
-  refreshToken: required("GOOGLE_ADS_REFRESH_TOKEN", "refresh token with the adwords scope"),
+  clientId: requiredForStdio("GOOGLE_ADS_OAUTH_CLIENT_ID", "OAuth 2.0 client ID from Google Cloud"),
+  clientSecret: requiredForStdio("GOOGLE_ADS_OAUTH_CLIENT_SECRET", "OAuth 2.0 client secret"),
+  refreshToken: requiredForStdio("GOOGLE_ADS_REFRESH_TOKEN", "refresh token with the adwords scope"),
   /** Manager (MCC) account to authenticate through; sent as the login-customer-id header. */
   loginCustomerId: optionalCustomerId("GOOGLE_ADS_LOGIN_CUSTOMER_ID"),
   /** Default client account for tools when customer_id is not passed. */
